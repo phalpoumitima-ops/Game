@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cyber Dodge Arcade</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background: #090a10;
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .game-container {
+      position: relative;
+      width: 480px;
+      height: 640px;
+      background: radial-gradient(circle at center, #14172b 0%, #07080d 100%);
+      border-radius: 16px;
+      box-shadow: 0 0 30px rgba(0, 240, 255, 0.2), 0 0 60px rgba(255, 0, 128, 0.1);
+      border: 2px solid rgba(0, 240, 255, 0.3);
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      pointer-events: none;
+      padding: 20px;
+    }
+
+    .stats-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 18px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 0 0 8px rgba(0, 240, 255, 0.8);
+    }
+
+    .stat-val {
+      color: #00f0ff;
+    }
+
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(9, 10, 16, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      transition: opacity 0.3s ease;
+      z-index: 10;
+    }
+
+    .hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    h1 {
+      font-size: 36px;
+      margin-bottom: 10px;
+      text-align: center;
+      background: linear-gradient(45deg, #ff0080, #00f0ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 20px rgba(255, 0, 128, 0.5);
+      letter-spacing: 2px;
+    }
+
+    p {
+      color: #a0a5c0;
+      font-size: 14px;
+      margin-bottom: 25px;
+      text-align: center;
+      max-width: 80%;
+      line-height: 1.5;
+    }
+
+    .btn {
+      background: linear-gradient(90deg, #ff0080, #7928ca);
+      color: #fff;
+      border: none;
+      padding: 14px 36px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(255, 0, 128, 0.5);
+      transition: all 0.2s ease;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 25px rgba(255, 0, 128, 0.8);
+    }
+
+    .controls-hint {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #606580;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-container">
+    <canvas id="gameCanvas" width="480" height="640"></canvas>
+
+    <div class="ui-overlay">
+      <div class="stats-bar">
+        <div>Score: <span id="scoreVal" class="stat-val">0</span></div>
+        <div>Multiplier: <span id="multVal" class="stat-val">1x</span></div>
+      </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen">
+      <h1>CYBER DODGE</h1>
+      <p>Use LEFT / RIGHT arrow keys or Mouse / Touch to dodge red glitch orbs and collect cyan energy orbs!</p>
+      <button class="btn" id="startBtn">PLAY GAME</button>
+      <div class="controls-hint">Controls: Arrow Keys / A & D / Mouse Drag</div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen hidden">
+      <h1>GAME OVER</h1>
+      <p>Final Score: <span id="finalScore" style="color: #00f0ff; font-weight: bold;">0</span></p>
+      <button class="btn" id="restartBtn">TRY AGAIN</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreVal = document.getElementById('scoreVal');
+    const multVal = document.getElementById('multVal');
+    const finalScore = document.getElementById('finalScore');
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    let gameActive = false;
+    let score = 0;
+    let multiplier = 1;
+    let combo = 0;
+    let animationId;
+
+    // Player Object
+    const player = {
+      x: canvas.width / 2,
+      y: canvas.height - 60,
+      radius: 16,
+      speed: 7,
+      color: '#00f0ff'
+    };
+
+    // Game Objects Arrays
+    let hazards = [];
+    let gems = [];
+    let particles = [];
+
+    // Keyboard Input
+    const keys = { left: false, right: false };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    });
+
+    // Mouse Controls
+    canvas.addEventListener('mousemove', (e) => {
+      if (!gameActive) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, mouseX));
+    });
+
+    // Touch Controls
+    canvas.addEventListener('touchmove', (e) => {
+      if (!gameActive) return;
+      const rect = canvas.getBoundingClientRect();
+      const touchX = e.touches[0].clientX - rect.left;
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, touchX));
+      e.preventDefault();
+    }, { passive: false });
+
+    // Spawning Mechanics
+    function spawnHazards() {
+      if (Math.random() < 0.04 + (score / 10000)) {
+        hazards.push({
+          x: Math.random() * (canvas.width - 30) + 15,
+          y: -20,
+          radius: Math.random() * 8 + 12,
+          speed: Math.random() * 2 + 3 + (score / 500),
+          color: '#ff0055'
+        });
+      }
+    }
+
+    function spawnGems() {
+      if (Math.random() < 0.02) {
+        gems.push({
+          x: Math.random() * (canvas.width - 30) + 15,
+          y: -20,
+          radius: 10,
+          speed: 3,
+          color: '#00f0ff'
+        });
+      }
+    }
+
+    function createParticles(x, y, color, count = 10) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 6,
+          vy: (Math.random() - 0.5) * 6,
+          radius: Math.random() * 3 + 1,
+          color,
+          alpha: 1,
+          life: 0.03
+        });
+      }
+    }
+
+    // Main Update Logic
+    function update() {
+      // Move Player
+      if (keys.left) player.x -= player.speed;
+      if (keys.right) player.x += player.speed;
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+
+      // Spawning Entities
+      spawnHazards();
+      spawnGems();
+
+      // Update Hazards
+      for (let i = hazards.length - 1; i >= 0; i--) {
+        const h = hazards[i];
+        h.y += h.speed;
+
+        // Collision Check (Player vs Hazard)
+        const dist = Math.hypot(player.x - h.x, player.y - h.y);
+        if (dist < player.radius + h.radius) {
+          createParticles(player.x, player.y, '#ff0055', 25);
+          endGame();
+          return;
+        }
+
+        if (h.y - h.radius > canvas.height) {
+          hazards.splice(i, 1);
+          score += 10 * multiplier;
+        }
+      }
+
+      // Update Gems
+      for (let i = gems.length - 1; i >= 0; i--) {
+        const g = gems[i];
+        g.y += g.speed;
+
+        // Collision Check (Player vs Gem)
+        const dist = Math.hypot(player.x - g.x, player.y - g.y);
+        if (dist < player.radius + g.radius) {
+          createParticles(g.x, g.y, '#00f0ff', 15);
+          gems.splice(i, 1);
+          score += 50 * multiplier;
+          combo++;
+          if (combo % 3 === 0 && multiplier < 5) {
+            multiplier++;
+          }
+        } else if (g.y - g.radius > canvas.height) {
+          gems.splice(i, 1);
+          combo = 0;
+          multiplier = 1;
+        }
+      }
+
+      // Update Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.life;
+        if (p.alpha <= 0) particles.splice(i, 1);
+      }
+
+      // Update HUD
+      scoreVal.textContent = Math.floor(score);
+      multVal.textContent = multiplier + 'x';
+    }
+
+    // Render Logic
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Background Grid
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.05)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+
+      // Draw Player
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = player.color;
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw Hazards
+      hazards.forEach(h => {
+        ctx.shadowColor = h.color;
+        ctx.fillStyle = h.color;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Draw Gems
+      gems.forEach(g => {
+        ctx.shadowColor = g.color;
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, g.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Draw Particles
+      particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      ctx.shadowBlur = 0;
+    }
+
+    // Game Loop
+    function gameLoop() {
+      if (!gameActive) return;
+      update();
+      draw();
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    // Game State Controls
+    function startGame() {
+      gameActive = true;
+      score = 0;
+      multiplier = 1;
+      combo = 0;
+      hazards = [];
+      gems = [];
+      particles = [];
+      player.x = canvas.width / 2;
+
+      startScreen.classList.add('hidden');
+      gameOverScreen.classList.add('hidden');
+
+      cancelAnimationFrame(animationId);
+      gameLoop();
+    }
+
+    function endGame() {
+      gameActive = false;
+      finalScore.textContent = Math.floor(score);
+      gameOverScreen.classList.remove('hidden');
+    }
+
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', startGame);
+  </script>
+</body>
+</html>
